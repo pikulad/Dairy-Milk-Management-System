@@ -1,13 +1,13 @@
-# Dairy-Management-System
-*Project Definition*
+# Dairy-Milk-Management-System
+## **Project Definition**
 
 _Dairy Milk management System is a web-based software application to maintain day to day transaction of milk collection and sell milk products. This system is easy to operate and understand. This system collects the milk from many different sources and distribute to customer or milk buyers._
 
-*Purpose*
+## **Purpose**
 
 _The system describes_ _the_ _selling of MILK &amp; various MILK PRODUCTS according to customer need. It provides the customer to create order and also cancel order. And it&#39;s provides easy to use system._
 
-*Scope*
+## *Scope*
 
 This Web-based software is available in limited area.
 
@@ -15,19 +15,19 @@ The aim is to focus on MILK &amp; MILK PRODUCTS in which user can view product a
 
 Only Admin can generate sales reports.
 
-*Technology Used*
+## **Technology Used**
 
-**Front End**
+### **Front End**
 
 PHP - PHP: Hypertext Preprocessor is a general-purpose programming language originally designed for web development.
 
 HTML – Hyper Text Markup Language is a system used to mark text for World Wide Webpages in order to obtain colors, style, picture, etc.
 
-**Back End**
+### **Back End**
 
 MYSQL – It is an Oracle-backed open source relational database management system based on structured Query Language.
 
-**Tools**
+### **Tools**
 
 WampServer - It refers to a software stack for the Microsoft Windows operating system and consisting of the Apache web server, OpenSSL for SSL support, MySQL database and PHP programming language.
 
@@ -35,7 +35,7 @@ Net Beans IDE 8.2 – It is an open-source integrated development environment (I
 
 Umlet – It is an open-source Java- based UML tool designed for teaching the Unified Modeling Language and for quickly creating UML diagrams.
 
-**Scripting Language**
+### **Scripting Language**
 
 JavaScript - It is an object-oriented computer programming language commonly used to create interactive effects within web browsers.
 
