@@ -23,6 +23,7 @@
 		<div class="panel-body">
 			<div class="col-md-11" style="margin-left: 50px;">
 				<form role="form" action="#" method="post">
+					<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
 					<div class="col-lg-3">
 						<div class="form-group">
 							<label style="margin-left: 20px;">Staff:</label>
@@ -64,10 +65,20 @@
 					<?php
 						if(isset($_POST['btnsubmit'])) {
 							
-							$sid = $_POST['staffid'];
-							$sdate = $_POST['sdate'];
-							$edate = $_POST['edate'];
-							$report_query = mysqli_query($connection, "SELECT concat(S.fname,' ',S.lname)as name ,MC.cattletype,MC.date,MC.time,MC.liter FROM tblmilkcollection MC INNER JOIN tblstaff S on S.id = MC.staffid WHERE MC.staffid=$sid AND MC.date BETWEEN '$sdate' AND '$edate';");
+							$sid = isset($_POST['staffid']) ? filter_var($_POST['staffid'], FILTER_VALIDATE_INT) : false;
+							$sdate = isset($_POST['sdate']) ? $_POST['sdate'] : '';
+							$edate = isset($_POST['edate']) ? $_POST['edate'] : '';
+							if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null) ||
+								!$sid || $sid < 1 ||
+								!preg_match('/^\d{4}-\d{2}-\d{2}$/', $sdate) ||
+								!preg_match('/^\d{4}-\d{2}-\d{2}$/', $edate) || $sdate > $edate) {
+								http_response_code(400);
+								exit('Invalid report request.');
+							}
+							$reportStatement=mysqli_prepare($connection, "SELECT concat(S.fname,' ',S.lname) AS name,MC.cattletype,MC.date,MC.time,MC.liter FROM tblmilkcollection MC INNER JOIN tblstaff S ON S.id=MC.staffid WHERE MC.staffid=? AND MC.date BETWEEN ? AND ?");
+							mysqli_stmt_bind_param($reportStatement, 'iss', $sid, $sdate, $edate);
+							mysqli_stmt_execute($reportStatement);
+							$report_query=mysqli_stmt_get_result($reportStatement);
 							
 							
 							?>

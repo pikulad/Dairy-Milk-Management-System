@@ -1,23 +1,21 @@
 <?php
-session_start();
+require_once __DIR__ . '/app_security.php';
+app_start_session();
 if(isset($_SESSION["retailer_username"])){
     header("location:retailer_index.php");
 }
 ?>
 <?php
-	if (isset($_COOKIE["username"])) {
-		header("location:index.php");
-	}
-	require './connection.php';
+		require './connection.php';
 	$strerr = '';
-	$strerr=$_SESSION['msg'];
+	$strerr=isset($_SESSION['msg']) ? $_SESSION['msg'] : '';
 	$_SESSION['msg']="";
 	
 	
 	if (isset($_POST['btn_submit'])) {
-		$username = $_POST['txtusername'];
+		$username = isset($_POST['txtusername']) ? trim($_POST['txtusername']) : '';
 		$username=mysqli_real_escape_string($con,$username);
-		$password = $_POST['txtpassword'];
+		$password = isset($_POST['txtpassword']) ? $_POST['txtpassword'] : '';
 		$password=mysqli_real_escape_string($con,$password);
 		$password=md5($password);
 		
@@ -32,24 +30,27 @@ if(isset($_SESSION["retailer_username"])){
 			} elseif (empty($username && $password)) {
 				$strerr = "*Both Fieds Are Required.";
 			}
+		} elseif (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+			$strerr = "*Your session expired. Please try again.";
 		} else {
-			$sql = "select * from tblcustomer where (emailid='$username' or contactno='$username') and password='$password'";
-			//echo "$sql";
-			$result = $con->query($sql);
-			if ($result->num_rows == 1) {
-				$row=mysqli_fetch_array($result);
+			$statement = mysqli_prepare($con, "SELECT id, fname, password FROM tblcustomer WHERE emailid = ? OR CAST(contactno AS CHAR) = ? LIMIT 1");
+			mysqli_stmt_bind_param($statement, 'ss', $username, $username);
+			mysqli_stmt_execute($statement);
+			$result = mysqli_stmt_get_result($statement);
+			$row = mysqli_fetch_assoc($result);
+			mysqli_stmt_close($statement);
+			if ($row && app_verify_password($password, $row['password'])) {
+				if (app_password_needs_upgrade($row['password'])) {
+					app_upgrade_password($con, 'tblcustomer', (int)$row['id'], $password);
+				}
+				session_regenerate_id(true);
 				$username=$row['fname'];
 				$strerr = "login successful";
-				setcookie("username", $username);
-				setcookie("uid",$row['id']);
 				$_SESSION['username']=$username;
 				$_SESSION['uid']=$row['id'];
-				$url=$_SESSION['url'];
-				$previous = "javascript:history.go(-1)";
-				if(isset($_SERVER['HTTP_REFERER'])) {
-					$previous = $_SERVER['HTTP_REFERER'];
-				}
-				if(empty($url)){
+				$_SESSION['customer_id']=(int)$row['id'];
+				$url=isset($_SESSION['url']) ? $_SESSION['url'] : '';
+				if(empty($url) || substr($url, 0, 1) !== '/' || substr($url, 0, 2) === '//'){
 					header("location:index.php");
 				}
 				else{
@@ -66,11 +67,9 @@ if(isset($_SESSION["retailer_username"])){
 		}
 	}
 	if (isset($_POST['btn_retailer'])) {
-		$username = $_POST['txtusername'];
+		$username = isset($_POST['txtusername']) ? trim($_POST['txtusername']) : '';
 		$username = mysqli_real_escape_string($con, $username);
-		$password = $_POST['txtpassword'];
-		$password = mysqli_real_escape_string($con, $password);
-		$password = md5($password);
+		$password = isset($_POST['txtpassword']) ? $_POST['txtpassword'] : '';
 		
 		if (empty($username) || empty($password)) {
 			
@@ -83,15 +82,25 @@ if(isset($_SESSION["retailer_username"])){
 			} elseif (empty($username && $password)) {
 				$strerr = "*Both Fieds Are Required.";
 			}
+		} elseif (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+			$strerr = "*Your session expired. Please try again.";
 		} else {
-			$sql = "select * from tblretailer where (emailid='$username' or contactno='$username') and password='$password'";
-			$result = $con->query($sql);
-			if ($result->num_rows == 1) {
-				$row = mysqli_fetch_array($result);
+			$statement = mysqli_prepare($con, "SELECT id, name, password FROM tblretailer WHERE emailid = ? OR CAST(contactno AS CHAR) = ? LIMIT 1");
+			mysqli_stmt_bind_param($statement, 'ss', $username, $username);
+			mysqli_stmt_execute($statement);
+			$result = mysqli_stmt_get_result($statement);
+			$row = mysqli_fetch_assoc($result);
+			mysqli_stmt_close($statement);
+			if ($row && app_verify_password($password, $row['password'])) {
+				if (app_password_needs_upgrade($row['password'])) {
+					app_upgrade_password($con, 'tblretailer', (int)$row['id'], $password);
+				}
+				session_regenerate_id(true);
 				$username = $row['name'];
 				$strerr = "login successful";
 				$_SESSION['retailer_username'] = $username;
 				$_SESSION['rid'] = $row['id'];
+				$_SESSION['retailer_id'] = (int)$row['id'];
 				header("location:retailer/index.php");
 			} else {
 				$strerr = "*Enter Valid Username and Password.";
@@ -245,6 +254,7 @@ if(isset($_SESSION["retailer_username"])){
                                                 <div class="wpb_wrapper column-1_1">
                                                     <div class="column-2_4">
                                                     <form id="sc_form_104_form" class="sc_input_hover_default" data-formtype="form_custom" method="post" action="#">
+                                                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                                                         <label style="color: red; font-size: 15px;" for="sc_form_104_1"><?php echo "$strerr"; ?></label>
                                                         
                                                         <div class="column-1 sc_column_item sc_column_item_1 odd">

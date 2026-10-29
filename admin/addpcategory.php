@@ -1,10 +1,7 @@
 <?php
 ob_start();
-session_start();
-if (!$_SESSION['username']) {
-    header("location:login.php");
-}
-require './connection.php';
+require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/connection.php';
 ?>
 <!DOCTYPE html>
 <html>
@@ -110,15 +107,42 @@ require './connection.php';
 
             <?php
             if (isset($_POST['submit'])) {
-                $pname = $_POST['cname'];
-                $picture = $_FILES['cimage']['name'];
-                $tmpimg = $_FILES['cimage']['tmp_name'];
-                $target = "./image" . basename($picture);
-                $description=$_POST['description'];
-                move_uploaded_file($tmpimg, "image/" . $picture);
-                $sql = "insert into tblproductcategory (name,imagepath,description) values ('$pname','$target','$description')";
-                if (mysqli_query($connection, $sql)) {
-                    header("location:addproduct.php");
+                if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+                    http_response_code(400);
+                    exit('Invalid request token.');
+                }
+                $pname = trim(isset($_POST['cname']) ? $_POST['cname'] : '');
+                $description = trim(isset($_POST['description']) ? $_POST['description'] : '');
+                $file = isset($_FILES['cimage']) ? $_FILES['cimage'] : null;
+                $allowedTypes = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif', 'image/webp' => 'webp');
+                $fileInfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mime = $file && $fileInfo && isset($file['tmp_name']) && is_uploaded_file($file['tmp_name'])
+                    ? finfo_file($fileInfo, $file['tmp_name'])
+                    : '';
+                if ($fileInfo) {
+                    finfo_close($fileInfo);
+                }
+                if ($pname === '' || strlen($pname) > 50 || strlen($description) > 500 ||
+                    !$file || $file['error'] !== UPLOAD_ERR_OK || $file['size'] > 5242880 ||
+                    !isset($allowedTypes[$mime])) {
+                    $_SESSION['msg'] = 'Enter valid category details and select an image up to 5 MB.';
+                } else {
+                    $filename = bin2hex(random_bytes(16)) . '.' . $allowedTypes[$mime];
+                    $target = 'admin/image/' . $filename;
+                    $imagePath = __DIR__ . DIRECTORY_SEPARATOR . 'image' . DIRECTORY_SEPARATOR . $filename;
+                    $statement = mysqli_prepare($connection, "INSERT INTO tblproductcategory (name,imagepath,description) VALUES (?,?,?)");
+                    mysqli_stmt_bind_param($statement, 'sss', $pname, $target, $description);
+                    if (move_uploaded_file($file['tmp_name'], $imagePath) && mysqli_stmt_execute($statement)) {
+                        mysqli_stmt_close($statement);
+                        header("location:addproduct.php");
+                        exit;
+                    }
+                    mysqli_stmt_close($statement);
+                    if (file_exists($imagePath)) {
+                        unlink($imagePath);
+                    }
+                    error_log('Unable to save product category.');
+                    $_SESSION['msg'] = 'Unable to save category.';
                 }
             }
             ?>
@@ -129,6 +153,7 @@ require './connection.php';
                 <div class="panel-body">
                     <div class="col-md-12">
                         <form role="form" action="#" method="post" enctype="multipart/form-data">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                             <div class="col-md-12">
                                 <div class="form-group">
                                     <label>Category Name:</label>

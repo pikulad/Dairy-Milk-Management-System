@@ -1,14 +1,21 @@
 
 <?php
 	require_once "data/slidebar.php";
-    if (isset($_REQUEST['id'])) {
-    $id = $_REQUEST['id'];
+    if (isset($_REQUEST['id']) && filter_var($_REQUEST['id'], FILTER_VALIDATE_INT)) {
+    $id = (int)$_REQUEST['id'];
 
     //fetch data from database
 
-    $view = "select * from tblstaff where id='$id'";
-    $result = $connection->query($view);
-    $row1 = $result->fetch_array();
+    $view = mysqli_prepare($connection, "SELECT * FROM tblstaff WHERE id = ?");
+    mysqli_stmt_bind_param($view, 'i', $id);
+    mysqli_stmt_execute($view);
+    $result = mysqli_stmt_get_result($view);
+    $row1 = mysqli_fetch_array($result);
+    mysqli_stmt_close($view);
+    if (!$row1) {
+        http_response_code(404);
+        exit('Staff member not found.');
+    }
     $fname = $row1['fname'];
     $lname = $row1['lname'];
     $address = $row1['address'];
@@ -174,4 +181,3 @@
 <?php
 ob_end_flush();
 ?>
-

@@ -20,11 +20,28 @@
     <?php
         if (isset($_POST['btnsubmit']))
         {
-            $ctype=$_POST['ddlmc'];
-            $litre=$_POST['txtlitre'];
-            $staffid=$_POST['ddlandmark'];
-			mysqli_query($connection,"insert into tblmilkcollection (cattletype,liter,date,time,staffid) values ('$ctype','$litre',CURRENT_DATE,CURRENT_TIME,'$staffid')");
+            if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+                http_response_code(400);
+                exit('Invalid request token.');
+            }
+            $ctype=isset($_POST['ddlmc']) ? $_POST['ddlmc'] : '';
+            $litre=isset($_POST['txtlitre']) ? filter_var($_POST['txtlitre'], FILTER_VALIDATE_INT) : false;
+            $staffid=isset($_POST['ddlandmark']) ? filter_var($_POST['ddlandmark'], FILTER_VALIDATE_INT) : false;
+            if (!in_array($ctype, array('Cow', 'Buffelo'), true) || !$litre || $litre < 1 || $litre > 99 || !$staffid) {
+                http_response_code(400);
+                exit('Invalid milk collection details.');
+            }
+            $statement=mysqli_prepare($connection, "INSERT INTO tblmilkcollection (cattletype,liter,date,time,staffid) VALUES (?,?,CURRENT_DATE,CURRENT_TIME,?)");
+            mysqli_stmt_bind_param($statement, 'sii', $ctype, $litre, $staffid);
+            $inserted=mysqli_stmt_execute($statement);
+            mysqli_stmt_close($statement);
+            if (!$inserted) {
+                error_log('Unable to save milk collection.');
+                http_response_code(500);
+                exit('Unable to save milk collection.');
+            }
 			header("location:index.php");
+            exit;
         }
         
         
@@ -36,6 +53,7 @@
 		<div class="panel-body">
 			<div class="col-md-10" style="margin-left: 50px;">
 				<form role="form" action="#" method="post">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
 					<div class="col-lg-6">
 						<div class="form-group">
 							<label>Cattel type</label>

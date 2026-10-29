@@ -1,37 +1,41 @@
 <?php
 	ob_start();
-	session_start();
-	require './connection.php';
-	$uid=$_SESSION['uid'];
-	if(!$_SESSION['username']){
-		header("location:login.php");
-	}
+	require_once __DIR__ . '/../auth.php';
+	require_once __DIR__ . '/../connection.php';
+	$uid=(int)$_SESSION['staff_id'];
     if(isset($_POST['btnpass']))
     {
         $password=$_POST['oldpass'];
 		$new_password=$_POST['npass'];
 		$comfim_password=$_POST['cpass'];
-		$change_query=mysqli_query($connection,"select password from tblstaff where id=$uid");
-		$userpass=mysqli_fetch_row($change_query);
-		if(!$change_query){
-		   echo "<script>alert('Username does not exist.')</script>";
-        }
-		else if($password != $userpass['password']){
+		if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+			echo "<script>alert('Invalid request token.')</script>";
+		} else {
+		$change_query=mysqli_prepare($connection,"SELECT password FROM tblstaff WHERE id = ?");
+		mysqli_stmt_bind_param($change_query, 'i', $uid);
+		mysqli_stmt_execute($change_query);
+		$userpass=mysqli_fetch_assoc(mysqli_stmt_get_result($change_query));
+		mysqli_stmt_close($change_query);
+		if(!$userpass || !app_verify_password($password, $userpass['password'])){
 			echo "<script>alert('Incorrect Password!')</script>";
-		}
-		if($new_password != $comfim_password){
+		} elseif($new_password != $comfim_password){
 			echo "<script>alert('Password does not match.')</script>";
         }
 		else{
-			$update_query=mysqli_query($connection,"update tblstaff set password='$comfim_password' where id=$uid;");
-			if($update_query){
+			$update_query=mysqli_prepare($connection,"UPDATE tblstaff SET password = ? WHERE id = ?");
+			$new_hash=password_hash($comfim_password, PASSWORD_DEFAULT);
+			mysqli_stmt_bind_param($update_query, 'si', $new_hash, $uid);
+			$updated=mysqli_stmt_execute($update_query);
+			mysqli_stmt_close($update_query);
+			if($updated){
 				echo "<script>alert('Your Password have successfully changed')</script>";
 			}
 			else{
 				echo "<script>alert('Error!')</script>";
 			}
-			
+
         }
+		}
     }
 ?>
 
@@ -73,6 +77,7 @@
                     
                     <ul class="dropdown-menu dropdown-messages">
                         <form method="post" action="#">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                         <li>
                             <div class="dropdown-messages-box">
                                 <div class="message-body">
@@ -93,7 +98,7 @@
 
                             <div class="dropdown-messages-box">
                                 <div class="message-body">
-                                    <input type="password" name=cpass" class="form-control" style="margin-left:13%;" placeholder="Enter Confirm Password">
+                                    <input type="password" name="cpass" class="form-control" style="margin-left:13%;" placeholder="Enter Confirm Password">
                                 </div>
                             </div>
                         </li>

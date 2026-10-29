@@ -22,6 +22,7 @@
 		<div class="panel-body">
 			<div class="col-md-11" style="margin-left: 50px;">
 				<form role="form" action="#" method="post">
+					<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
 					<div class="col-lg-3">
 						<div class="form-group">
 							<label style="margin-left: 20px;">Customer Name:</label>
@@ -52,11 +53,20 @@
 					
 					<?php
 						if(isset($_POST['btnsubmit'])) {
-							
-							$cn = $_POST['cname'];
-							$sdate = $_POST['sdate'];
-							$edate = $_POST['edate'];
-							$report_query = mysqli_query($connection, "SELECT concat( tblcustomer.fname, ' ', tblcustomer.lname ) as name, tblcustomer.address, tblcustomer.contactno, tblbill.no, DATE_FORMAT(tblbill.date, '%d/%m/%Y') as date, tblbill.total_amount, tblbill.status FROM `tblbill` INNER JOIN tblcustomer on tblcustomer.id = tblbill.customerid WHERE concat( tblcustomer.fname, ' ', tblcustomer.lname ) LIKE '%$cn%' and tblbill.date BETWEEN '$sdate' and '$edate'");
+							$cn = isset($_POST['cname']) ? trim($_POST['cname']) : '';
+							$sdate = isset($_POST['sdate']) ? $_POST['sdate'] : '';
+							$edate = isset($_POST['edate']) ? $_POST['edate'] : '';
+							if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null) ||
+								!preg_match('/^\d{4}-\d{2}-\d{2}$/', $sdate) ||
+								!preg_match('/^\d{4}-\d{2}-\d{2}$/', $edate) || $sdate > $edate) {
+								http_response_code(400);
+								exit('Invalid report request.');
+							}
+							$searchName = '%' . $cn . '%';
+							$reportStatement = mysqli_prepare($connection, "SELECT concat(tblcustomer.fname, ' ', tblcustomer.lname) AS name, tblcustomer.address, tblcustomer.contactno, tblbill.no, DATE_FORMAT(tblbill.date, '%d/%m/%Y') AS date, tblbill.total_amount, tblbill.status FROM tblbill INNER JOIN tblcustomer ON tblcustomer.id = tblbill.customerid WHERE concat(tblcustomer.fname, ' ', tblcustomer.lname) LIKE ? AND tblbill.date BETWEEN ? AND ?");
+							mysqli_stmt_bind_param($reportStatement, 'sss', $searchName, $sdate, $edate);
+							mysqli_stmt_execute($reportStatement);
+							$report_query = mysqli_stmt_get_result($reportStatement);
 							$report_total=mysqli_num_rows($report_query);
 							if($report_total<1){
 							    echo "<br><br><br><br><br><br><h3 class='form-control'>NO REPORTS FOUND ! </h3>";

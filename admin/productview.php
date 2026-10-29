@@ -72,8 +72,10 @@
                                         <label class="col-md-3 control-label" for="name">Quantity available:</label>
                                         <div class="col-md-9">
 											<?php
-												$sql7 = "select * from tblproduct where productcategoryid=$id";
-												$query7 = mysqli_query($connection, $sql7);
+												$productStatement=mysqli_prepare($connection, "SELECT * FROM tblproduct WHERE productcategoryid = ?");
+												mysqli_stmt_bind_param($productStatement, 'i', $id);
+												mysqli_stmt_execute($productStatement);
+												$query7=mysqli_stmt_get_result($productStatement);
 											?>
                                             <table class="table table-bordered">
                                                 <thead>
@@ -88,8 +90,10 @@
 														while ($row7 = mysqli_fetch_array($query7)) {
 															//echo $row7['measurementid'].",";
 															$mid = $row7['measurementid'];
-															$sql8 = "select * from tblmeasurement where id=$mid";
-															$query8 = mysqli_query($connection, $sql8);
+															$measurementStatement=mysqli_prepare($connection, "SELECT * FROM tblmeasurement WHERE id = ?");
+															mysqli_stmt_bind_param($measurementStatement, 'i', $mid);
+															mysqli_stmt_execute($measurementStatement);
+															$query8=mysqli_stmt_get_result($measurementStatement);
 							
 															while ($row8 = mysqli_fetch_array($query8)) {
 																?>

@@ -155,7 +155,7 @@
                                                             <td>".$row['name']."</td>
                                                             <td>".$row['type']."</td>
                                                             <td>".$row['qty']."</td>
-                                                            <td><a href='data/deliverd.php?billno=$billno'>Deliverd</a></td>
+                                                            <td><form method='post' action='data/deliverd.php'><input type='hidden' name='csrf_token' value='".htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8')."'><input type='hidden' name='billno' value='".(int)$billno."'><button type='submit'>Delivered</button></form></td>
                                                           </tr>";
                                                 }
                                             ?>
