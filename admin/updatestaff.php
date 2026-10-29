@@ -1,13 +1,20 @@
 <?php
 	require_once "data/slidebar.php";
-if (isset($_REQUEST['id'])) {
-    $id = $_REQUEST['id'];
+if (isset($_REQUEST['id']) && filter_var($_REQUEST['id'], FILTER_VALIDATE_INT)) {
+    $id = (int)$_REQUEST['id'];
 
     //fetch data from database 
 
-    $view = "select * from tblstaff where id='$id'";
-    $result = $connection->query($view);
-    $row1 = $result->fetch_array();
+    $view = mysqli_prepare($connection, "SELECT * FROM tblstaff WHERE id = ?");
+    mysqli_stmt_bind_param($view, 'i', $id);
+    mysqli_stmt_execute($view);
+    $result = mysqli_stmt_get_result($view);
+    $row1 = mysqli_fetch_array($result);
+    mysqli_stmt_close($view);
+    if (!$row1) {
+        http_response_code(404);
+        exit('Staff member not found.');
+    }
     $fname = $row1['fname'];
     $lname = $row1['lname'];
     $address = $row1['address'];
@@ -79,10 +86,17 @@ if (isset($_REQUEST['id'])) {
                 }
 
                 if (count($error) == 0) {
-                    $sql = "update tblstaff set fname='$fname',lname='$lname',address='$address',landmarkid='$landmark',gender='$gender',contactno='$contactno',role='$role',updatedatetime='$datetime' where id='$id'";
-
-
-                    $query = mysqli_query($connection, $sql);
+                    if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+                        http_response_code(400);
+                        exit('Invalid request token.');
+                    }
+                    $landmark=(int)$landmark;
+                    $contactno=(int)$contactno;
+                    $role=(int)$role;
+                    $updateStatement=mysqli_prepare($connection, "UPDATE tblstaff SET fname=?,lname=?,address=?,landmarkid=?,gender=?,contactno=?,role=?,updatedatetime=? WHERE id=?");
+                    mysqli_stmt_bind_param($updateStatement, 'sssisiisi', $fname, $lname, $address, $landmark, $gender, $contactno, $role, $datetime, $id);
+                    $query=mysqli_stmt_execute($updateStatement);
+                    mysqli_stmt_close($updateStatement);
                     if ($query) {
                         //echo "<script>alert('Update Successful.');</script>";
                         header("location:staffview.php");
@@ -107,6 +121,7 @@ if (isset($_REQUEST['id'])) {
                 <div class="panel-body">
                     <div class="col-md-8" style="margin-left: 50px;">
                         <form role="form" action="#" method="post">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                             <div class="col-lg-6">
                                 <div class="form-group">
                                     <label>First Name</label>

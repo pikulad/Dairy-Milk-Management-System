@@ -23,6 +23,7 @@
 		<div class="panel-body">
 			<div class="col-md-11" style="margin-left: 50px;">
 				<form role="form" action="#" method="post">
+					<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
 					<div class="col-lg-3">
 						
 						<div class="form-group">
@@ -47,9 +48,18 @@
 					
 					<?php
 						if(isset($_POST['btnsubmit'])) {
-							$sdate = $_POST['sdate'];
-							$edate = $_POST['edate'];
-							$report_query = mysqli_query($connection, "select B.no, DATE_FORMAT(B.date,'%d/%m/%Y') as date, PC.name, M.type, C.qty, B.status from tblcustomerorder C inner join tblproduct P on C.productid = P.id inner join tblproductcategory PC on P.productcategoryid = PC.id inner join tblmeasurement M on P.measurementid = M.id INNER JOIN tblbill B on C.billno = B.no WHERE B.date between '$sdate' and '$edate' ORDER BY B.no ASC");
+							$sdate = isset($_POST['sdate']) ? $_POST['sdate'] : '';
+							$edate = isset($_POST['edate']) ? $_POST['edate'] : '';
+							if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null) ||
+								!preg_match('/^\d{4}-\d{2}-\d{2}$/', $sdate) ||
+								!preg_match('/^\d{4}-\d{2}-\d{2}$/', $edate) || $sdate > $edate) {
+								http_response_code(400);
+								exit('Invalid report request.');
+							}
+							$reportStatement = mysqli_prepare($connection, "SELECT B.no, DATE_FORMAT(B.date,'%d/%m/%Y') AS date, PC.name, M.type, C.qty, B.status FROM tblcustomerorder C INNER JOIN tblproduct P ON C.productid=P.id INNER JOIN tblproductcategory PC ON P.productcategoryid=PC.id INNER JOIN tblmeasurement M ON P.measurementid=M.id INNER JOIN tblbill B ON C.billno=B.no WHERE B.date BETWEEN ? AND ? ORDER BY B.no ASC");
+							mysqli_stmt_bind_param($reportStatement, 'ss', $sdate, $edate);
+							mysqli_stmt_execute($reportStatement);
+							$report_query = mysqli_stmt_get_result($reportStatement);
 							
 							
 							?>

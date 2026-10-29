@@ -1,5 +1,6 @@
 <?php
-	session_start();
+	require_once __DIR__ . '/app_security.php';
+	app_start_session();
 	$url=$_SERVER['REQUEST_URI'];
 	$_SESSION['url']=$url;
 	require_once "function.php";
@@ -12,29 +13,40 @@
 	require_once "connection.php";
 	
 	
-	if (isset($_SESSION["username"])) {
+	if (isset($_SESSION["customer_id"])) {
 		//validation();
 		$uname = $_SESSION["username"];
-		$uid=$_SESSION["uid"];
+		$uid=$_SESSION["customer_id"];
 		$welcome = "<a href='logout.php'><span>$uname, Logout</span></a>";
 	} else {
 		header("location:login.php");
-		$welcome = "<a href='login.php'><span>Hello,Sign in</span></a>";
-		
+		exit;
 	}
 	
 	
 	//product data fetch
 ?>
 <?php
-	$custid=$_SESSION['uid'];
+	$custid=(int)$_SESSION['customer_id'];
 	$date=date('Y-m-d');
 	if(isset($_POST['btnUpdate'])){
-		$lid=$_POST['lid'];
-		$address=$_POST['address'];
-		
-		$updateSQL="UPDATE `tblcustomer` SET `landmarkid` ='$lid',`address` = '$address'  WHERE `tblcustomer`.`id` = $custid;";
-		$query=mysqli_query($con,$updateSQL);
+		if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+			http_response_code(400);
+			exit('Invalid request token.');
+		}
+
+		$lid=isset($_POST['lid']) ? (int)$_POST['lid'] : 0;
+		$address=isset($_POST['address']) ? trim($_POST['address']) : '';
+		$updateStatement=mysqli_prepare($con, "UPDATE tblcustomer SET landmarkid = ?, address = ? WHERE id = ? AND EXISTS (SELECT 1 FROM tbllandmark WHERE id = ?)");
+		if ($lid > 0 && $address !== '' && strlen($address) <= 200 && $updateStatement) {
+			mysqli_stmt_bind_param($updateStatement, 'isii', $lid, $address, $custid, $lid);
+			$query=mysqli_stmt_execute($updateStatement);
+		} else {
+			$query=false;
+		}
+		if ($updateStatement) {
+			mysqli_stmt_close($updateStatement);
+		}
 		if ($query){
 			$_SESSION['msg']="Data Updated!";
 		}
@@ -44,34 +56,107 @@
 	}
 	if(isset($_POST['btnOrder']))
 	{
-	 
-		$Data=$_SESSION['product'];
-		$total_amount=$_POST['total_amt'];
-		$total_product=$_POST['total_product'];
-		$bill_sql="insert into tblbill (customerid, date, total_amount) values ($custid,'$date',$total_amount);";
-		$billno_sql="select no from tblbill where customerid=$custid and date='$date' and total_amount=$total_amount";
-		$bill_query=mysqli_query($con,$bill_sql);
-		$billno_query=mysqli_query($con,$billno_sql);
-		while ($row=mysqli_fetch_array($billno_query)){
-			$billno=$row['no'];
+		if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+			http_response_code(400);
+			exit('Invalid request token.');
 		}
+
+		mysqli_begin_transaction($con);
+		$cartStatement=mysqli_prepare($con, "SELECT C.productid, C.qty, P.price FROM tblcart C INNER JOIN tblproduct P ON P.id = C.productid WHERE C.customerid = ? AND P.status = 1 FOR UPDATE");
+		if (!$cartStatement) {
+			mysqli_rollback($con);
+			error_log('Unable to prepare checkout cart query.');
+			http_response_code(500);
+			exit('Unable to place order.');
+		}
+		mysqli_stmt_bind_param($cartStatement, 'i', $custid);
+		mysqli_stmt_execute($cartStatement);
+		mysqli_stmt_bind_result($cartStatement, $productId, $quantity, $unitPrice);
+		$items = array();
+		$calculatedTotal = 0;
+		while (mysqli_stmt_fetch($cartStatement)) {
+			$productId = (int)$productId;
+			$quantity = (int)$quantity;
+			$unitPrice = (float)$unitPrice;
+			if ($productId <= 0 || $quantity <= 0 || $quantity > 5 || !is_finite($unitPrice) || $unitPrice < 0) {
+				$items = array();
+				break;
+			}
+			$items[] = array('productid' => $productId, 'qty' => $quantity);
+			$calculatedTotal += $unitPrice * $quantity;
+		}
+		mysqli_stmt_close($cartStatement);
+		if (count($items) === 0 || !is_finite($calculatedTotal) || $calculatedTotal < 0 || $calculatedTotal > 2147483647) {
+			mysqli_rollback($con);
+			$_SESSION['msg'] = 'Your cart is empty or contains unavailable items.';
+			header("location:checkout.php");
+			exit;
+		}
+		$total_amount = (int)round($calculatedTotal);
+		$billStatement=mysqli_prepare($con, "INSERT INTO tblbill (customerid, date, total_amount) VALUES (?, ?, ?)");
+		if (!$billStatement) {
+			mysqli_rollback($con);
+			error_log('Unable to prepare checkout bill insert.');
+			http_response_code(500);
+			exit('Unable to place order.');
+		}
+		mysqli_stmt_bind_param($billStatement, 'isi', $custid, $date, $total_amount);
+		if (!mysqli_stmt_execute($billStatement)) {
+			mysqli_stmt_close($billStatement);
+			mysqli_rollback($con);
+			error_log('Unable to insert checkout bill.');
+			http_response_code(500);
+			exit('Unable to place order.');
+		}
+		$billno=mysqli_insert_id($con);
+		mysqli_stmt_close($billStatement);
+		$orderStatement=mysqli_prepare($con, "INSERT INTO tblcustomerorder (billno, productid, qty) VALUES (?, ?, ?)");
+		if (!$orderStatement) {
+			mysqli_rollback($con);
+			error_log('Unable to prepare checkout item insert.');
+			http_response_code(500);
+			exit('Unable to place order.');
+		}
+		foreach ($items as $item) {
+			mysqli_stmt_bind_param($orderStatement, 'iii', $billno, $item['productid'], $item['qty']);
+			if (!mysqli_stmt_execute($orderStatement)) {
+				mysqli_stmt_close($orderStatement);
+				mysqli_rollback($con);
+				error_log('Unable to insert checkout item.');
+				http_response_code(500);
+				exit('Unable to place order.');
+			}
+		}
+		mysqli_stmt_close($orderStatement);
+		$deleteStatement=mysqli_prepare($con, "DELETE FROM tblcart WHERE customerid = ?");
+		if (!$deleteStatement) {
+			mysqli_rollback($con);
+			error_log('Unable to prepare checkout cart cleanup.');
+			http_response_code(500);
+			exit('Unable to place order.');
+		}
+		mysqli_stmt_bind_param($deleteStatement, 'i', $custid);
+		if (!mysqli_stmt_execute($deleteStatement)) {
+			mysqli_stmt_close($deleteStatement);
+			mysqli_rollback($con);
+			error_log('Unable to clear cart after checkout.');
+			http_response_code(500);
+			exit('Unable to place order.');
+		}
+		mysqli_stmt_close($deleteStatement);
+		mysqli_commit($con);
 		$_SESSION['billno']=$billno;
-		foreach ($Data as $value)
-		{
-			mysqli_query($con,"insert into tblcustomerorder (billno,productid,qty) values ($billno,".$value['pid'].",".$value['pqty'].");");
-			
-		}
-		mysqli_query($con,"delete from tblcart where customerid=$custid");
-		//echo 'window.open(remark.php)';
 		header("location:remark.php");
-		echo "<script>alert('Your Order is has been successfully placed.')</script>";
+		exit;
 	}
 ?>
 
 <?php
 	
-	$sql="select C.id, PC.imagepath, PC.name, P.id, M.type, P.price, C.qty, P.price*C.qty as 'total' from tblCart C inner join tblproduct P on C.productid=P.id inner join tblproductcategory PC on P.productcategoryid = PC.id inner join tblmeasurement M on P.measurementid= M.id where C.customerid=$uid";
-	$cartRES=$con->query($sql);
+	$cartStatement=mysqli_prepare($con, "SELECT C.id, PC.imagepath, PC.name, P.id, M.type, P.price, C.qty, P.price*C.qty AS total FROM tblCart C INNER JOIN tblproduct P ON C.productid=P.id INNER JOIN tblproductcategory PC ON P.productcategoryid=PC.id INNER JOIN tblmeasurement M ON P.measurementid=M.id WHERE C.customerid=?");
+	mysqli_stmt_bind_param($cartStatement, 'i', $uid);
+	mysqli_stmt_execute($cartStatement);
+	$cartRES=mysqli_stmt_get_result($cartStatement);
 	$total_amt=0;
 ?>
 <!DOCTYPE html>
@@ -247,8 +332,10 @@
 		<!-- Fetch Customer Data -->
 		<?php
 			
-			$sql="select * from tblcustomer where id=$_SESSION[uid];";
-			$query=$con->query($sql);
+			$customerStatement=mysqli_prepare($con, "SELECT * FROM tblcustomer WHERE id = ?");
+			mysqli_stmt_bind_param($customerStatement, 'i', $custid);
+			mysqli_stmt_execute($customerStatement);
+			$query=mysqli_stmt_get_result($customerStatement);
 			
 			$lidSQL="select * from tbllandmark;";
 			$lidQuery=$con->query($lidSQL);
@@ -271,6 +358,7 @@
 												
 												<div class="column-2_6">
 													<form class="sc_form" action="#" method="post">
+													<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
 													
 													<?php $msg= $_SESSION['msg']; echo "<label style='color: red'>$msg</label>"; $_SESSION['msg']="";?>
 														<table class="sc_table">
@@ -299,6 +387,7 @@
 												</div>
 												<div class="column-2_3">
 													<form class="sc_form" action="#" method="post">
+													<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
 														<table class="sc_table">
 															
 															<thead>
@@ -316,7 +405,6 @@
 															
 															<?php
 																$count=1;
-																$product=array();
 																
 																while ($row=$cartRES->fetch_array()){
 																	?>
@@ -332,12 +420,7 @@
 																	
 																	<?php
 																	$count++;
-																	$sub=array();
-																	$sub[pid]=$row[id];
-																	$sub[pqty]=$row[qty];
-																	$product[]=$sub;
 																}
-																$_SESSION['product']=$product;
 																?>
 															<tr>
 																<td colspan="5" align="right">Shipping Charge:</td>
@@ -351,8 +434,6 @@
 															</tr>
 															<tr>
 																<td colspan="6" align="right">
-																	<input type="hidden" name="total_amt" value="<?php echo $total_amt;?>">
-																	<input type="hidden" name="total_product" value="<?php echo mysqli_num_rows($cartRES);?>">
 																	<input type="submit" value="Place Your Order" name="btnOrder">
 																</td>
 															</tr>

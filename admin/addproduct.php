@@ -1,10 +1,11 @@
 <?php
 ob_start();
-session_start();
-if (!$_SESSION['username']) {
+require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/connection.php';
+if (empty($_SESSION['staff_id'])) {
     header("location:login.php");
+    exit;
 }
-require './connection.php';
 ?>
 <!DOCTYPE html>
 <html>
@@ -112,21 +113,39 @@ require './connection.php';
             <?php
                 if(isset($_POST['btnsubmit']))
                 {
-                    $category=$_POST['ddlpcn'];
-                    $measurement=$_POST['ddm'];
-                    $price=$_POST['price'];
-                    $md=$_POST['mfdate'];
-                    $ed=$_POST['exdate'];
+                    if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+                        http_response_code(400);
+                        exit('Invalid request token.');
+                    }
+                    $category=isset($_POST['ddlpcn']) ? (int)$_POST['ddlpcn'] : 0;
+                    $measurement=isset($_POST['ddm']) ? (int)$_POST['ddm'] : 0;
+                    $price=isset($_POST['price']) ? $_POST['price'] : '';
+                    $md=isset($_POST['mfdate']) ? $_POST['mfdate'] : '';
+                    $ed=isset($_POST['exdate']) ? $_POST['exdate'] : '';
                     $datetime1 = date("Y-m-d h:i:s");
                     $status=1;
-                    $addproduct="insert into tblproduct (productcategoryid,measurementid,price,manufacture_date,expire_date,update_datetime,status) values ('$category','$measurement','$price','$md','$ed','$datetime1','$status')";
-                    if(mysqli_query($connection, $addproduct))
+                    $validPrice = is_numeric($price) && (float)$price > 0;
+                    $validDates = DateTime::createFromFormat('Y-m-d', $md) && DateTime::createFromFormat('Y-m-d', $ed) && $md <= $ed;
+                    $addproduct=mysqli_prepare($connection, "INSERT INTO tblproduct (productcategoryid,measurementid,price,manufacture_date,expire_date,update_datetime,status) VALUES (?,?,?,?,?,?,?)");
+                    if($category > 0 && $measurement > 0 && $validPrice && $validDates && $addproduct)
                     {
+                        $price=(float)$price;
+                        mysqli_stmt_bind_param($addproduct, 'iidsssi', $category, $measurement, $price, $md, $ed, $datetime1, $status);
+                        $inserted=mysqli_stmt_execute($addproduct);
+                        mysqli_stmt_close($addproduct);
+                    } else {
+                        $inserted=false;
+                        if ($addproduct) {
+                            mysqli_stmt_close($addproduct);
+                        }
+                    }
+                    if($inserted) {
                         header("location:index.php");
+                        exit;
                     }
                     else
                     {
-                        header("location:addproduct.php");
+                        $_SESSION['msg'] = 'Please provide valid product information.';
                     }
                 }
             ?>
@@ -135,6 +154,7 @@ require './connection.php';
                 <div class="panel-heading">Add Product Form</div>
                 <div class="panel-body">
                     <form role="form" action="#" method="post">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                         <div class="col-md-10">
 
                             <div class="col-lg-6">

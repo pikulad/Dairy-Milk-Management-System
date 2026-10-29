@@ -35,15 +35,19 @@
                         {
                             echo "<tr>";
                             $pci=$rowvp['productcategoryid'];
-                            $pc="select * from tblproductcategory where id=$pci";
-                            $resultvp1=$connection->query($pc);
+                            $pc=mysqli_prepare($connection, "SELECT * FROM tblproductcategory WHERE id = ?");
+                            mysqli_stmt_bind_param($pc, 'i', $pci);
+                            mysqli_stmt_execute($pc);
+                            $resultvp1=mysqli_stmt_get_result($pc);
                             while ($rowvp1=$resultvp1->fetch_array())
                             {
                                 echo "<td>".$rowvp1['name']."</td>";
                             }
                             $msi=$rowvp['measurementid'];
-                            $ms="select * from tblmeasurement where id=$msi";
-                            $resultvp2=$connection->query($ms);
+                            $ms=mysqli_prepare($connection, "SELECT * FROM tblmeasurement WHERE id = ?");
+                            mysqli_stmt_bind_param($ms, 'i', $msi);
+                            mysqli_stmt_execute($ms);
+                            $resultvp2=mysqli_stmt_get_result($ms);
                             while ($rowvp2=$resultvp2->fetch_array())
                             {
                                 echo "<td>".$rowvp2['type']."</td>";
@@ -88,4 +92,3 @@
 <?php
 ob_end_flush();
 ?>
-

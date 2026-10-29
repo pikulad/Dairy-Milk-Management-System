@@ -1,18 +1,31 @@
 <?php
-session_start();
-$rid=$_SESSION['rid'];
-$connection=mysqli_connect("localhost","root","mysql","dudhwala");
-if(!isset($_SESSION['retailer_username'])){
+require_once __DIR__ . '/../app_security.php';
+app_start_session();
+require_once __DIR__ . '/../connection.php';
+$rid=isset($_SESSION['retailer_id']) ? (int)$_SESSION['retailer_id'] : 0;
+if(empty($_SESSION['retailer_id'])){
     header("location:../login.php");
+    exit;
 }else {
     if(isset($_POST['Submit'])){
-        $liter=$_POST['liter'];
-        $price=$_POST['price'];
-        $date=$_POST['date'];
-        
-        $sql="insert into tblRetailerorder (retailerid, litre, price, date) values ($rid,$liter,$price,'$date')";
-        mysqli_query($connection,$sql);
-        $msg="Order successfully send.";
+        if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+            http_response_code(400);
+            exit('Invalid request token.');
+        }
+        $liter=isset($_POST['liter']) ? filter_var($_POST['liter'], FILTER_VALIDATE_INT) : false;
+        $price=isset($_POST['price']) ? filter_var($_POST['price'], FILTER_VALIDATE_INT) : false;
+        $date=isset($_POST['date']) ? $_POST['date'] : '';
+        $parsedDate=DateTime::createFromFormat('Y-m-d', $date);
+        if (!$liter || $liter < 1 || $liter > 10000 || !$price || $price < 1 || $price > 100000 ||
+            !$parsedDate || $parsedDate->format('Y-m-d') !== $date || $date < date('Y-m-d')) {
+            $msg="Please enter valid order details.";
+        } else {
+            $statement=mysqli_prepare($connection, "INSERT INTO tblRetailerorder (retailerid, litre, price, date) VALUES (?,?,?,?)");
+            mysqli_stmt_bind_param($statement, 'iiis', $rid, $liter, $price, $date);
+            $created=mysqli_stmt_execute($statement);
+            mysqli_stmt_close($statement);
+            $msg=$created ? "Order successfully send." : "Unable to submit order.";
+        }
     }
 	?>
     <!DOCTYPE html>
@@ -93,6 +106,7 @@ if(!isset($_SESSION['retailer_username'])){
                 <div class="panel-body">
                     <label style="color: red"><?php echo $msg; $msg='';?></label>
                     <form class="form-horizontal" action="#" method="post">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                         <fieldset>
                             <!-- Name input-->
                             <div class="form-group">
@@ -156,7 +170,10 @@ if(!isset($_SESSION['retailer_username'])){
                                         <th>Order Date</th>
                                         </thead>
                                     <?php
-                                        $order_history=mysqli_query($connection,"select * from tblRetailerorder where retailerid=$rid");
+                                        $historyStatement=mysqli_prepare($connection, "SELECT * FROM tblRetailerorder WHERE retailerid = ?");
+                                        mysqli_stmt_bind_param($historyStatement, 'i', $rid);
+                                        mysqli_stmt_execute($historyStatement);
+                                        $order_history=mysqli_stmt_get_result($historyStatement);
                                         while ($row=mysqli_fetch_array($order_history))
                                         {
                                             echo "<tr>

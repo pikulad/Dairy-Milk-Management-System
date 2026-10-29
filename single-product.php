@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/app_security.php';
+app_start_session();
 $url=$_SERVER['REQUEST_URI'];
 $_SESSION['url']=$url;
 include "connection.php";
@@ -14,13 +15,21 @@ if (isset($_COOKIE["username"])) {
 
 //product data fetch
 
-if (!isset($_GET['id'])) {
+if (!isset($_GET['id']) || !filter_var($_GET['id'], FILTER_VALIDATE_INT)) {
     header("location:shop.php");
+    exit;
 } else {
-    $id = $_GET['id'];
-    $sql = "select * from tblproductcategory where id=$id";
-    $query = mysqli_query($con, $sql);
-    $result = mysqli_fetch_array($query)
+    $id = (int)$_GET['id'];
+    $statement = mysqli_prepare($con, "SELECT * FROM tblproductcategory WHERE id = ?");
+    mysqli_stmt_bind_param($statement, 'i', $id);
+    mysqli_stmt_execute($statement);
+    $query = mysqli_stmt_get_result($statement);
+    $result = mysqli_fetch_array($query);
+    mysqli_stmt_close($statement);
+    if (!$result) {
+        http_response_code(404);
+        exit('Product not found.');
+    }
     ?>
 
 
@@ -238,6 +247,7 @@ if (!isset($_GET['id'])) {
                                                 <form class="variations_form cart" method="post"
                                                       enctype='multipart/form-data' data-product_id="<?php echo $id; ?>"
                                                       action="addtocart.php">
+                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                                                     <table class="variations">
                                                         <tbody>
                                                             <tr>

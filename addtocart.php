@@ -1,7 +1,8 @@
 <?php
-session_start();
+require_once __DIR__ . '/app_security.php';
+app_start_session();
 require_once "connection.php";
-$url=$_SESSION['url'];
+$url=isset($_SESSION['url']) ? $_SESSION['url'] : 'shop.php';
 /**
  * Created by PhpStorm.
  * User: priyanklad
@@ -13,25 +14,33 @@ if(isset($_SERVER['HTTP_REFERER'])) {
     $previous = $_SERVER['HTTP_REFERER'];
 }*/
 
-if(isset($_SESSION['username'])){
+if(isset($_SESSION['customer_id'])){
 
     if(isset($_POST['btnCart'])){
-        echo "Welcome";
-        $uid=$_SESSION['uid'];
-        $pid=$_POST['ddweight'];
-        $qty=$_POST['qty'];
-        $sql="insert into tblcart (customerid, productid, qty) values ($uid,$pid,$qty)";
-        $query=mysqli_query($con,$sql);
+        if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+            http_response_code(400);
+            exit('Invalid request token.');
+        }
+        $uid=(int)$_SESSION['customer_id'];
+        $pid=isset($_POST['ddweight']) ? filter_var($_POST['ddweight'], FILTER_VALIDATE_INT) : false;
+        $qty=isset($_POST['qty']) ? filter_var($_POST['qty'], FILTER_VALIDATE_INT) : false;
+        if (!$pid || $pid < 1 || !$qty || $qty < 1 || $qty > 5) {
+            http_response_code(400);
+            exit('Invalid product or quantity.');
+        }
+        $statement=mysqli_prepare($con, "INSERT INTO tblcart (customerid, productid, qty) SELECT ?, id, ? FROM tblproduct WHERE id = ? AND status = 1");
+        mysqli_stmt_bind_param($statement, 'iii', $uid, $qty, $pid);
+        $query=mysqli_stmt_execute($statement) && mysqli_stmt_affected_rows($statement) === 1;
+        mysqli_stmt_close($statement);
         if ($query){
         	$_SESSION['msg']="Thank you!  Product is added in your cart.";
-            echo "<script>alert('Thank you!  Product is added in your cart.');</script>";
-
-            header("location:$url");
+            header("Location: " . $url);
+            exit;
         }
         else{
 			$_SESSION['msg']="Error!   Please Try Again.";
-            echo "<script>alert('Error!!');</script>";
-            header("location:$url");
+            header("Location: " . $url);
+            exit;
         }
     }
     else{
@@ -40,5 +49,6 @@ if(isset($_SESSION['username'])){
     }
 }else{
     header("location:login.php");
+    exit;
 }
 ?>

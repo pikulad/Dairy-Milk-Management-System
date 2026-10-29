@@ -1,11 +1,15 @@
 <?php
-session_start();
+require_once __DIR__ . '/app_security.php';
+app_start_session();
 require './connection.php';
 $passerr = '';
 $validCaptcha=$_SESSION['captcha'];
 //echo $validCaptcha;
-if ($_POST['btn_submit']) {
-    $flag = 0;
+if (isset($_POST['btn_submit'])) {
+    $flag = app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null) ? 0 : 1;
+    if ($flag) {
+        $csrferr = '<div class="sc_infobox_style_error sc_infobox">Invalid request token. Please reload and try again.</div>';
+    }
     $fname = $_POST['txtfname'];
     $lname = $_POST['txtlname'];
     $address = $_POST['txtaddress'];
@@ -20,7 +24,7 @@ if ($_POST['btn_submit']) {
         $flag++;
         $captchaerr='<div class="sc_infobox_style_error sc_infobox"><span for="sc_form_104_1">Please Enter CAPTCHA.</span></div>';
     }
-    else if (!$captcha==$validCaptcha){
+    else if ($captcha !== $validCaptcha){
         $flag++;
         $captchaerr = '<div class="sc_infobox_style_error sc_infobox"><span for="sc_form_104_1">Invalid CAPTCHA</span></div>';
     }
@@ -97,7 +101,7 @@ if ($_POST['btn_submit']) {
         }
     }
     if ($_POST["txtpassword"] === $_POST["txtcpassword"]) {
-        $password = md5($password);
+        $password = password_hash($password, PASSWORD_DEFAULT);
     } else {
 
 
@@ -106,9 +110,11 @@ if ($_POST['btn_submit']) {
     }
     if ($flag == 0) {
 
-        $sql = "insert into tblcustomer(fname,lname,address,landmarkid,gender,contactno,emailid,password,updatedatetime)values('$fname','$lname','$address',$landmark,'$gender',$contactno,'$email','$password','$datetime')";
-        //echo $sql;
-        $query = mysqli_query($con, $sql);
+        $landmarkId = (int)$landmark;
+        $statement = mysqli_prepare($con, "INSERT INTO tblcustomer (fname,lname,address,landmarkid,gender,contactno,emailid,password,updatedatetime) VALUES (?,?,?,?,?,?,?,?,?)");
+        mysqli_stmt_bind_param($statement, 'sssisssss', $fname, $lname, $address, $landmarkId, $gender, $contactno, $email, $password, $datetime);
+        $query = mysqli_stmt_execute($statement);
+        mysqli_stmt_close($statement);
         if ($query) {
             //echo "<script>alert('Registration Successful.');</script>";
             $_SESSION['msg']="Registation Successful";
@@ -285,6 +291,8 @@ if ($_POST['btn_submit']) {
                                         <div class="wpb_text_column wpb_content_element">
                                             <div class="wpb_wrapper">
                                                 <form id="sc_form_104_form" class="sc_input_hover_iconed" data-formtype="form_custom" method="post" action="#">
+                                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
+                                                    <?php if (isset($csrferr)) { echo $csrferr; } ?>
                                                     <label style="color: red; font-size: 15px;" for="sc_form_104_1"><?php echo $_SESSION['msg']; $_SESSION['msg']=""; ?></label>
 
                                                     <!---  Form  -->

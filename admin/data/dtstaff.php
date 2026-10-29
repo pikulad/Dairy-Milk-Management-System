@@ -1,69 +1,61 @@
 <?php
-$connection=mysqli_connect('localhost','root','mysql','dudhwala')
-or die("connection failed".mysqli_errno());
-	$request=$_REQUEST;
-	$col =array(
-		0   =>  'fname',
-		1   =>  'lname',
-		2   =>  'address',
-		3   =>  'gender',
-		4   =>  'contactno',
-		5   =>  'email',
-		6	=>	'role'
-	);  //create column like table in database
-	
-	$sql ="SELECT fname,lname,address,gender,contactno,email,role FROM `tblstaff`";
-	$query=mysqli_query($connection,$sql);
-	
-	$totalData=mysqli_num_rows($query);
-	
-	$totalFilter=$totalData;
-	
-	//Search
-	
-	if(!empty($request['search']['value'])){
-		$sql ="SELECT fname,lname,address,gender,contactno,email,role FROM tblstaff WHERE 1=1";
-		$sql.=" AND (fname Like '".$request['search']['value']."%' ";
-		$sql.=" OR lname Like '".$request['search']['value']."%' ";
-		$sql.=" OR contactno Like '".$request['search']['value']."%' ";
-		$sql.=" OR email Like '".$request['search']['value']."%' )";
-	}
-	$query=mysqli_query($connection,$sql);
-	$totalData=mysqli_num_rows($query);
-	
-	//Order
-	
-	$sql.=" ORDER BY ".$col[$request['order'][0]['column']]."   ".$request['order'][0]['dir']." LIMIT ". $request['start'].",".$request['length']."  ";
-	
-	$query=mysqli_query($connection,$sql);
-	
-	$data=array();
-	echo mysqli_error($connection);
-	while($row=mysqli_fetch_array($query)){
-		$subdata=array();
-		$subdata[]=$row[0]; //id
-		$subdata[]=$row[1]; //name
-		$subdata[]=$row[2]; //salary
-		$subdata[]=$row[3];//age           //create event on click in button edit in cell datatable for display modal dialog           $row[0] is id in table on database
-		$subdata[]=$row[4];                      //<button type="button" id="getEdit" class="btn btn-primary btn-xs" data-toggle="modal" data-target="#myModal" data-id="'.$row[0].'"><i class="glyphicon glyphicon-pencil">&nbsp;</i>Edit</button><button type="button" class="btn btn-danger btn-xs"><i class="glyphicon glyphicon-trash">&nbsp;</i>Delete</button>
-		$subdata[]=$row[5];
-		if($row[6]==0){
-			$subdata[]="Admin";
-		}
-		elseif ($row[6]==1){
-			$subdata[]="Employee";
-		}
-		$data[]=$subdata;
-	}
-	
-	$json_data=array(
-		"draw"              =>  intval($request['draw']),
-		"recordsTotal"      =>  intval($totalData),
-		"recordsFiltered"   =>  intval($totalFilter),
-		"data"              =>  $data
-	);
-	
-	echo json_encode($json_data);
+require_once __DIR__ . '/../auth.php';
+require_once __DIR__ . '/../connection.php';
 
+$request = $_REQUEST;
+$columns = array('fname', 'lname', 'address', 'gender', 'contactno', 'email', 'role');
+$draw = isset($request['draw']) ? (int)$request['draw'] : 0;
+$orderIndex = isset($request['order'][0]['column']) ? (int)$request['order'][0]['column'] : 0;
+$orderColumn = isset($columns[$orderIndex]) ? $columns[$orderIndex] : 'fname';
+$orderDirection = isset($request['order'][0]['dir']) && strtolower($request['order'][0]['dir']) === 'desc' ? 'DESC' : 'ASC';
+$start = isset($request['start']) ? max(0, (int)$request['start']) : 0;
+$length = isset($request['length']) ? (int)$request['length'] : 10;
+$length = $length < 1 ? 10 : min($length, 100);
+$search = isset($request['search']['value']) ? trim($request['search']['value']) : '';
+
+$totalResult = mysqli_query($connection, "SELECT COUNT(*) AS total FROM tblstaff");
+$totalData = (int)mysqli_fetch_assoc($totalResult)['total'];
+$where = '';
+if ($search !== '') {
+    $where = " WHERE fname LIKE CONCAT(?, '%') OR lname LIKE CONCAT(?, '%') OR CAST(contactno AS CHAR) LIKE CONCAT(?, '%') OR email LIKE CONCAT(?, '%')";
+}
+$countStatement = mysqli_prepare($connection, "SELECT COUNT(*) AS total FROM tblstaff" . $where);
+if ($search !== '') {
+    mysqli_stmt_bind_param($countStatement, 'ssss', $search, $search, $search, $search);
+}
+mysqli_stmt_execute($countStatement);
+$totalFilter = (int)mysqli_fetch_assoc(mysqli_stmt_get_result($countStatement))['total'];
+mysqli_stmt_close($countStatement);
+
+$sql = "SELECT fname,lname,address,gender,contactno,email,role FROM tblstaff" . $where .
+    " ORDER BY `$orderColumn` $orderDirection LIMIT ?, ?";
+$statement = mysqli_prepare($connection, $sql);
+if ($search !== '') {
+    mysqli_stmt_bind_param($statement, 'ssssii', $search, $search, $search, $search, $start, $length);
+} else {
+    mysqli_stmt_bind_param($statement, 'ii', $start, $length);
+}
+mysqli_stmt_execute($statement);
+$result = mysqli_stmt_get_result($statement);
+$data = array();
+while ($row = mysqli_fetch_assoc($result)) {
+    $data[] = array(
+        $row['fname'],
+        $row['lname'],
+        $row['address'],
+        $row['gender'],
+        $row['contactno'],
+        $row['email'],
+        (int)$row['role'] === 0 ? 'Admin' : 'Employee'
+    );
+}
+mysqli_stmt_close($statement);
+
+header('Content-Type: application/json; charset=utf-8');
+echo json_encode(array(
+    'draw' => $draw,
+    'recordsTotal' => $totalData,
+    'recordsFiltered' => $totalFilter,
+    'data' => $data
+));
 ?>
-

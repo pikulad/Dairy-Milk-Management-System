@@ -63,9 +63,18 @@
                 }
                 if(count($error)==0)
                 {
-                  $sql="insert into tblstaff(fname,lname,address,landmarkid,gender,contactno,role,email,password,updatedatetime)values('$fname','$lname','$address',$landmark,'$gender',$contactno,$role,'$email','$password','$datetime')";
-                  echo $sql;
-                  $query=mysqli_query($connection, $sql);
+                  if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+                      http_response_code(400);
+                      exit('Invalid request token.');
+                  }
+                  $landmark=(int)$landmark;
+                  $contactno=(int)$contactno;
+                  $role=(int)$role;
+                  $password=password_hash($password, PASSWORD_DEFAULT);
+                  $statement=mysqli_prepare($connection, "INSERT INTO tblstaff (fname,lname,address,landmarkid,gender,contactno,role,email,password,updatedatetime) VALUES (?,?,?,?,?,?,?,?,?,?)");
+                  mysqli_stmt_bind_param($statement, 'sssisiisss', $fname, $lname, $address, $landmark, $gender, $contactno, $role, $email, $password, $datetime);
+                  $query=mysqli_stmt_execute($statement);
+                  mysqli_stmt_close($statement);
                   if($query)
                   {
                       header("location:staffview.php");
@@ -90,6 +99,7 @@
                 <div class="panel-body">
                     <div class="col-md-8" style="margin-left: 50px;">
                         <form role="form" action="#" method="post">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                             <div class="col-lg-6">
                                 <div class="form-group">
                                     <label>First Name</label>

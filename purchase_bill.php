@@ -1,9 +1,18 @@
 <?php
-	session_start();
+	require_once __DIR__ . '/app_security.php';
+	app_start_session();
+	if (empty($_SESSION['customer_id'])) {
+		header("location:login.php");
+		exit;
+	}
 	if (!isset($_GET['billno'])) {
 		header("location:shop.php");
 	} else {
-		$id = $_GET['billno'];
+		$id = filter_input(INPUT_GET, 'billno', FILTER_VALIDATE_INT);
+		if (!$id || $id < 1) {
+			http_response_code(404);
+			exit('Invoice not found.');
+		}
 		require_once "connection.php";
 		require "invoicr/invoicr.php";
 		$invoice = new Invoicr();
@@ -11,8 +20,12 @@
 		//$billno=$_SESSION['billno'];
 		$billno = $id;
 		
-		$order_sql = "select PC.name, M.type, P.price, C.qty, P.price*C.qty as 'total' from tblcustomerorder C inner join tblproduct P on C.productid=P.id inner join tblproductcategory PC on P.productcategoryid = PC.id inner join tblmeasurement M on P.measurementid= M.id where C.billno=$billno";
-		$order_query = mysqli_query($con, $order_sql);
+		$order_sql = "select PC.name, M.type, P.price, C.qty, P.price*C.qty as total from tblcustomerorder C inner join tblproduct P on C.productid=P.id inner join tblproductcategory PC on P.productcategoryid = PC.id inner join tblmeasurement M on P.measurementid= M.id inner join tblbill B on B.no=C.billno where C.billno=? and B.customerid=?";
+		$order_statement = mysqli_prepare($con, $order_sql);
+		$customerId = (int)$_SESSION['customer_id'];
+		mysqli_stmt_bind_param($order_statement, 'ii', $billno, $customerId);
+		mysqli_stmt_execute($order_statement);
+		$order_query = mysqli_stmt_get_result($order_statement);
 		$order_Data = array();
 		//echo $order_sql;
 		//echo mysqli_error($con);
@@ -28,8 +41,11 @@
 		}
 		//print_r($order_Data);
 		
-		$bill_sql = "SELECT B.no as billno,B.customerid as cid,C.fname,C.lname,C.address,L.Name as landmark,C.contactno,B.date,B.total_amount FROM tblbill B INNER JOIN tblcustomer C on C.id=B.customerid INNER JOIN tbllandmark L on L.id=C.landmarkid WHERE B.no=$billno";
-		$bill_query = mysqli_query($con, $bill_sql);
+		$bill_sql = "SELECT B.no as billno,B.customerid as cid,C.fname,C.lname,C.address,L.Name as landmark,C.contactno,B.date,B.total_amount FROM tblbill B INNER JOIN tblcustomer C on C.id=B.customerid INNER JOIN tbllandmark L on L.id=C.landmarkid WHERE B.no=? AND B.customerid=?";
+		$bill_statement = mysqli_prepare($con, $bill_sql);
+		mysqli_stmt_bind_param($bill_statement, 'ii', $billno, $customerId);
+		mysqli_stmt_execute($bill_statement);
+		$bill_query = mysqli_stmt_get_result($bill_statement);
 		$bill_Data = array();
 		//echo $bill_sql;
 		//echo mysqli_error($con);
@@ -46,6 +62,12 @@
 			$sub['date'] = $bill['date'];
 			$sub['total_amount'] = $bill['total_amount'];
 			$bill_Data[] = $sub;
+		}
+		mysqli_stmt_close($bill_statement);
+		mysqli_stmt_close($order_statement);
+		if (count($bill_Data) === 0) {
+			http_response_code(404);
+			exit('Invoice not found.');
 		}
 		//print_r($bill_Data);
 		

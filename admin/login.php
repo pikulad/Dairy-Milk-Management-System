@@ -1,7 +1,8 @@
 <?php
 ob_start();
-session_start();
-if (isset($_SESSION['username'])) {
+require_once __DIR__ . '/../app_security.php';
+app_start_session();
+if (isset($_SESSION['staff_id'])) {
     header("location:index.php");
 }
 ?>
@@ -23,31 +24,30 @@ if (isset($_SESSION['username'])) {
     require './connection.php';
     $loginerr = "";
     if (isset($_POST['btnsubmit'])) {
-        $contact = $_POST['email'];
-        $name = $_POST['email'];
-        $password = $_POST['password'];
-        $loginquery = "select * FROM tblstaff WHERE (email='$name' or contactno='$contact') and password='$password'";
-        $result = $connection->query($loginquery);
-        $row = $result->fetch_array();
-        $email1 = $row['email'];
-        $contact1 = $row['contactno'];
-        $password1 = $row['password'];
-        $role1 = $row['role'];
-        $firstname = $row['fname'];
-        if (($name == $email1 || $contact == $contact1) && $password == $password1) {
-            
-            if ($role1 == 0) {
-                $_SESSION['username'] = $firstname;
-				$_SESSION['uid']=$row['id'];
-                header("location:index.php");
-            }
-            if ($role1 == 1) {
-              $_SESSION['username'] = $firstname;
-              $_SESSION['uid']=$row['id'];
-                header("location:another.php");
-            }
+        $contact = isset($_POST['email']) ? trim($_POST['email']) : '';
+        $password = isset($_POST['password']) ? $_POST['password'] : '';
+        if (!app_csrf_is_valid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : null)) {
+            $loginerr = "Your session expired. Please try again.";
         } else {
-            $loginerr = "pls try again later";
+            $statement = mysqli_prepare($connection, "SELECT id, email, contactno, password, role, fname FROM tblstaff WHERE email = ? OR CAST(contactno AS CHAR) = ? LIMIT 1");
+            mysqli_stmt_bind_param($statement, 'ss', $contact, $contact);
+            mysqli_stmt_execute($statement);
+            $result = mysqli_stmt_get_result($statement);
+            $row = mysqli_fetch_assoc($result);
+            mysqli_stmt_close($statement);
+            if ($row && app_verify_password($password, $row['password'])) {
+                if (app_password_needs_upgrade($row['password'])) {
+                    app_upgrade_password($connection, 'tblstaff', (int)$row['id'], $password);
+                }
+                session_regenerate_id(true);
+                $_SESSION['username'] = $row['fname'];
+                $_SESSION['uid'] = (int)$row['id'];
+                $_SESSION['staff_id'] = (int)$row['id'];
+                $_SESSION['staff_role'] = (int)$row['role'];
+                header($row['role'] == 0 ? "location:index.php" : "location:another.php");
+                exit;
+            }
+            $loginerr = "Invalid username or password.";
         }
     }
     ?>
@@ -60,6 +60,7 @@ if (isset($_SESSION['username'])) {
                     <div class="panel-heading">Log in</div>
                     <div class="panel-body">
                         <form role="form" action="#" method="POST">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(app_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                             <fieldset>
                                 <div class="form-group">
                                     <input class="form-control" placeholder="E-mail" name="email" type="text" autofocus="" required="Please Enter Your Email.">
